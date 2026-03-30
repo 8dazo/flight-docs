@@ -28,6 +28,34 @@ export type DocumentCollaborator = {
   };
 };
 
+export type DocumentCommentRecord = {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    id: string;
+    name: string;
+    email: string;
+  };
+};
+
+export type DocumentVersionRecord = {
+  id: string;
+  title: string;
+  createdAt: string;
+};
+
+export type DocumentPresenceRecord = {
+  color: string;
+  cursorX: number | null;
+  cursorY: number | null;
+  label: string;
+  sessionId: string;
+  updatedAt: string;
+  userId: string;
+};
+
 export type AccessibleDocument = {
   canEdit: boolean;
   document: {
@@ -145,6 +173,13 @@ export async function createDocumentForUser(
   const document = await db.document.create({
     data: {
       contentJson,
+      versions: {
+        create: {
+          contentJson,
+          createdBy: userId,
+          title,
+        },
+      },
       ownerId: userId,
       title,
     },
@@ -267,6 +302,7 @@ export async function saveDocumentContentForUser(
   const accessibleDocument = await db.document.findFirst({
     select: {
       id: true,
+      title: true,
     },
     where: {
       id: documentId,
@@ -281,14 +317,41 @@ export async function saveDocumentContentForUser(
   const updated = await db.document.update({
     data: {
       contentJson,
+      versions: {
+        create: {
+          contentJson,
+          createdBy: userId,
+          title: accessibleDocument.title ?? "Untitled Document",
+        },
+      },
     },
     select: {
       updatedAt: true,
+      versions: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+        },
+        take: 30,
+      },
     },
     where: {
       id: documentId,
     },
   });
+
+  const obsoleteVersions = updated.versions.slice(25);
+  if (obsoleteVersions.length) {
+    await db.documentVersion.deleteMany({
+      where: {
+        id: {
+          in: obsoleteVersions.map((version) => version.id),
+        },
+      },
+    });
+  }
 
   return updated.updatedAt.toISOString();
 }
@@ -359,4 +422,206 @@ export async function createImportRecord(params: {
       uploadedBy: params.uploadedBy,
     },
   });
+}
+
+export async function getDocumentComments(documentId: string, userId?: string | null) {
+  await getAccessibleDocument(documentId, userId);
+
+  const comments = await db.documentComment.findMany({
+    include: {
+      author: {
+        select: {
+          email: true,
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    where: {
+      documentId,
+    },
+  });
+
+  return comments.map((comment) => ({
+    author: comment.author,
+    body: comment.body,
+    createdAt: comment.createdAt.toISOString(),
+    id: comment.id,
+    updatedAt: comment.updatedAt.toISOString(),
+  })) satisfies DocumentCommentRecord[];
+}
+
+export async function addDocumentComment(userId: string, documentId: string, body: string) {
+  const accessible = await getAccessibleDocument(documentId, userId);
+
+  if (!accessible.canEdit) {
+    throw new Error("Only collaborators with edit access can comment.");
+  }
+
+  const comment = await db.documentComment.create({
+    data: {
+      authorId: userId,
+      body: body.trim(),
+      documentId,
+    },
+    include: {
+      author: {
+        select: {
+          email: true,
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return {
+    author: comment.author,
+    body: comment.body,
+    createdAt: comment.createdAt.toISOString(),
+    id: comment.id,
+    updatedAt: comment.updatedAt.toISOString(),
+  } satisfies DocumentCommentRecord;
+}
+
+export async function getDocumentVersions(documentId: string, userId?: string | null) {
+  await getAccessibleDocument(documentId, userId);
+
+  const versions = await db.documentVersion.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      createdAt: true,
+      id: true,
+      title: true,
+    },
+    take: 25,
+    where: {
+      documentId,
+    },
+  });
+
+  return versions.map((version) => ({
+    createdAt: version.createdAt.toISOString(),
+    id: version.id,
+    title: version.title,
+  })) satisfies DocumentVersionRecord[];
+}
+
+export async function restoreDocumentVersion(userId: string, documentId: string, versionId: string) {
+  const accessible = await getAccessibleDocument(documentId, userId);
+
+  if (!accessible.canEdit) {
+    throw new Error("Only collaborators with edit access can restore versions.");
+  }
+
+  const version = await db.documentVersion.findFirst({
+    where: {
+      documentId,
+      id: versionId,
+    },
+  });
+
+  if (!version) {
+    throw new Error("Version not found.");
+  }
+
+  await saveDocumentContentForUser(userId, documentId, version.contentJson as Prisma.InputJsonValue);
+}
+
+export async function upsertDocumentPresence(input: {
+  color: string;
+  cursorX: number | null;
+  cursorY: number | null;
+  documentId: string;
+  label: string;
+  sessionId: string;
+  userId: string;
+}) {
+  const accessible = await getAccessibleDocument(input.documentId, input.userId);
+
+  if (!accessible.canEdit) {
+    throw new Error("Only collaborators with edit access can publish presence.");
+  }
+
+  await db.documentPresence.upsert({
+    create: {
+      color: input.color,
+      cursorX: input.cursorX,
+      cursorY: input.cursorY,
+      documentId: input.documentId,
+      label: input.label,
+      sessionId: input.sessionId,
+      userId: input.userId,
+    },
+    update: {
+      color: input.color,
+      cursorX: input.cursorX,
+      cursorY: input.cursorY,
+      label: input.label,
+    },
+    where: {
+      documentId_sessionId: {
+        documentId: input.documentId,
+        sessionId: input.sessionId,
+      },
+    },
+  });
+
+  await db.documentPresence.deleteMany({
+    where: {
+      documentId: input.documentId,
+      updatedAt: {
+        lt: new Date(Date.now() - 1000 * 15),
+      },
+    },
+  });
+}
+
+export async function clearDocumentPresence(documentId: string, sessionId: string) {
+  await db.documentPresence.deleteMany({
+    where: {
+      documentId,
+      sessionId,
+    },
+  });
+}
+
+export async function getDocumentPresence(documentId: string, userId: string, sessionId?: string) {
+  const accessible = await getAccessibleDocument(documentId, userId);
+
+  if (!accessible.canEdit) {
+    return [];
+  }
+
+  const presence = await db.documentPresence.findMany({
+    orderBy: {
+      updatedAt: "desc",
+    },
+    where: {
+      documentId,
+      sessionId: sessionId
+        ? {
+            not: sessionId,
+          }
+        : undefined,
+      updatedAt: {
+        gte: new Date(Date.now() - 1000 * 15),
+      },
+    },
+  });
+
+  return presence.map((item) => ({
+    color: item.color,
+    cursorX: item.cursorX,
+    cursorY: item.cursorY,
+    label: item.label,
+    sessionId: item.sessionId,
+    updatedAt: item.updatedAt.toISOString(),
+    userId: item.userId,
+  })) satisfies DocumentPresenceRecord[];
 }

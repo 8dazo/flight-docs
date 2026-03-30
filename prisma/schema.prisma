@@ -14,6 +14,8 @@ model User {
   passwordHash   String
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
+  comments       DocumentComment[]
+  cursorStates   DocumentPresence[]
   sessions       Session[]
   ownedDocuments Document[]             @relation("OwnedDocuments")
   collaborations DocumentCollaborator[]
@@ -21,12 +23,12 @@ model User {
 }
 
 model Session {
-  id         String   @id @default(cuid())
-  tokenHash  String   @unique
-  userId     String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -39,7 +41,10 @@ model Document {
   ownerId       String
   owner         User                   @relation("OwnedDocuments", fields: [ownerId], references: [id], onDelete: Cascade)
   collaborators DocumentCollaborator[]
+  comments      DocumentComment[]
   imports       DocumentImport[]
+  presences     DocumentPresence[]
+  versions      DocumentVersion[]
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 }
@@ -58,15 +63,57 @@ model DocumentCollaborator {
 }
 
 model DocumentImport {
-  id         String   @id @default(cuid())
-  documentId String
-  uploadedBy String
-  filename   String
-  mimeType   String
+  id          String   @id @default(cuid())
+  documentId  String
+  uploadedBy  String
+  filename    String
+  mimeType    String
   storagePath String?
-  createdAt  DateTime @default(now())
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  uploader   User     @relation("UploadedImports", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploader    User     @relation("UploadedImports", fields: [uploadedBy], references: [id], onDelete: Cascade)
 
   @@index([documentId])
+}
+
+model DocumentComment {
+  id         String   @id @default(cuid())
+  documentId String
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  createdBy   String?
+  title       String
+  contentJson Json
+  createdAt   DateTime @default(now())
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+}
+
+model DocumentPresence {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  sessionId  String
+  color      String
+  cursorX    Float?
+  cursorY    Float?
+  label      String
+  updatedAt  DateTime @updatedAt
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, sessionId])
+  @@index([documentId, updatedAt])
 }

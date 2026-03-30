@@ -15,6 +15,7 @@ export default async function DocumentPage({ params }: Props) {
     <DocumentEditor
       collaborators={accessibleDocument.collaborators}
       currentUserId={user?.id ?? null}
+      currentUserName={user?.name ?? user?.email ?? null}
       document={accessibleDocument.document}
       owner={accessibleDocument.owner}
       permissions={{

@@ -37,9 +37,11 @@ import { TablePlugin } from "@lexical/react/LexicalTablePlugin";
 
 import { renameDocument } from "@/app/actions/documents";
 import { InsertDialogs, ShareDialog } from "@/components/editor/dialogs";
+import { ActivitySidebar } from "@/components/editor/activity-sidebar";
 import { EmbedNode } from "@/components/editor/nodes/embed-node";
 import { ImageNode } from "@/components/editor/nodes/image-node";
 import { OutlineSidebar } from "@/components/editor/outline-sidebar";
+import { PresenceOverlay } from "@/components/editor/presence-overlay";
 import {
   CodeHighlightPlugin,
   EditorAutosavePlugin,
@@ -68,6 +70,7 @@ import { cn } from "@/lib/utils";
 type Props = {
   collaborators: DocumentCollaborator[];
   currentUserId: string | null;
+  currentUserName: string | null;
   document: {
     id: string;
     title: string;
@@ -90,12 +93,14 @@ type Props = {
 export function DocumentEditor({
   collaborators,
   currentUserId,
+  currentUserName,
   document,
   owner,
   permissions,
 }: Props) {
   const router = useRouter();
   const editorRef = useRef<LexicalEditor | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const [title, setTitle] = useState(document.title);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [isRenamePending, startRenameTransition] = useTransition();
@@ -292,7 +297,7 @@ export function DocumentEditor({
               )}
             </header>
 
-            <section className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <section className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_300px] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
               <div className="min-h-0 overflow-hidden border-r border-slate-200 bg-slate-50/70">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                   <Link
@@ -312,7 +317,23 @@ export function DocumentEditor({
                 />
               </div>
 
-              <div className="min-h-0 overflow-y-auto bg-[linear-gradient(180deg,#f6f8fc_0%,#f0f4fa_100%)] px-2 py-3 sm:px-4 sm:py-4">
+              <div
+                className="relative min-h-0 overflow-y-auto bg-[linear-gradient(180deg,#f6f8fc_0%,#f0f4fa_100%)] px-2 py-3 sm:px-4 sm:py-4"
+                ref={previewRef}
+              >
+                <PresenceOverlay
+                  canEdit={permissions.canEdit}
+                  currentUserId={currentUserId}
+                  documentId={document.id}
+                  label={
+                    currentUserId
+                      ? owner.id === currentUserId
+                        ? `${owner.name} (Owner)`
+                        : currentUserName ?? "Collaborator"
+                      : "Viewer"
+                  }
+                  previewRef={previewRef}
+                />
                 <div className="editor-page-shell" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
                   <RichTextPlugin
                     ErrorBoundary={LexicalErrorBoundary}
@@ -322,6 +343,10 @@ export function DocumentEditor({
                     placeholder={<div />}
                   />
                 </div>
+              </div>
+
+              <div className="min-h-0 hidden lg:block">
+                <ActivitySidebar canEdit={permissions.canEdit} documentId={document.id} />
               </div>
             </section>
           </div>
