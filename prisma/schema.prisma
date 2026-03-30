@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String                 @id @default(cuid())
+  email          String                 @unique
+  name           String
+  passwordHash   String
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  sessions       Session[]
+  ownedDocuments Document[]             @relation("OwnedDocuments")
+  collaborations DocumentCollaborator[]
+  imports        DocumentImport[]       @relation("UploadedImports")
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Document {
+  id            String                 @id @default(cuid())
+  title         String                 @default("Untitled Document")
+  contentJson   Json
+  ownerId       String
+  owner         User                   @relation("OwnedDocuments", fields: [ownerId], references: [id], onDelete: Cascade)
+  collaborators DocumentCollaborator[]
+  imports       DocumentImport[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+}
+
+model DocumentCollaborator {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  role       String   @default("editor")
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId])
+}
+
+model DocumentImport {
+  id         String   @id @default(cuid())
+  documentId String
+  uploadedBy String
+  filename   String
+  mimeType   String
+  storagePath String?
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploader   User     @relation("UploadedImports", fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}

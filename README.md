@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Flight Docs
 
-## Getting Started
+Flight Docs is a lightweight collaborative docs app built with Next.js 16, Prisma, PostgreSQL, and Lexical. It focuses on a polished v1 workflow:
 
-First, run the development server:
+- create, rename, edit, and reopen documents
+- autosave rich-text content as Lexical JSON
+- share documents with another user by email
+- import `.txt` and `.md` files into new editable docs
+- show clear separation between owned docs and shared docs
+
+## Stack
+
+- Next.js 16 App Router
+- React 19
+- Prisma
+- PostgreSQL via `DATABASE_URL`
+- Lexical rich-text editor
+- Tailwind CSS 4
+- Zod for server-side validation
+
+## Local setup
+
+1. Copy `.env.example` to `.env`.
+2. Fill in:
+   - `DATABASE_URL`
+   - `DEMO_USER_PASSWORD`
+3. Reset and apply the Prisma schema:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm db:reset:remote
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Seed the demo users:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm seed:demo-users
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+5. Start the app:
 
-## Learn More
+```bash
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Demo accounts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `ava@flightdocs.dev`
+- `sam@flightdocs.dev`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Both demo users use the password stored in `DEMO_USER_PASSWORD`.
 
-## Deploy on Vercel
+## Supported workflows
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Dashboard with `Owned by me` and `Shared with me`
+- Inline rename for owned docs
+- Rich text formatting:
+  - bold
+  - italic
+  - underline
+  - heading 1
+  - heading 2
+  - bullet list
+  - numbered list
+- Debounced autosave to `PATCH /api/documents/[id]/content`
+- Owner-only sharing by exact email
+- Import `.txt` and `.md` files into new docs
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Data model
+
+Main tables:
+
+- `User`
+- `Session`
+- `Document`
+- `DocumentCollaborator`
+- `DocumentImport`
+
+## Known limitations
+
+- No real-time multiplayer editing or presence
+- No comments, suggestion mode, or version history
+- Sharing supports editor access only
+- Markdown import keeps the workflow lightweight rather than aiming for full markdown fidelity
+
+## Scripts
+
+- `pnpm dev` runs the app locally
+- `pnpm lint` runs ESLint
+- `pnpm db:reset:remote` drops the app tables and reapplies the Prisma schema
+- `pnpm seed:demo-users` seeds the demo users in Postgres
