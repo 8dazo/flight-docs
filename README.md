@@ -1,5 +1,16 @@
 # Flight Docs
 
+Flight Docs is a collaborative rich-text document workspace with sharing, comments, version history, imports, exports, and live presence.
+
+- Live app: https://flight-docs.vercel.app/
+- Demo video: https://youtu.be/bSBA-L5y8oY
+- Demo login:
+  - `ava@flightdocs.dev`
+  - `sam@flightdocs.dev`
+  - Password: `admin123`
+
+[![Flight Docs demo video](https://img.youtube.com/vi/bSBA-L5y8oY/maxresdefault.jpg)](https://youtu.be/bSBA-L5y8oY)
+
 Flight Docs is a collaborative document workspace built with Next.js 16, Prisma, PostgreSQL, and Lexical. It combines a modern rich-text editor with sharing, public links, imports, downloads, comments, lightweight version history, and collaboration presence indicators.
 
 ## Overview
@@ -199,29 +210,3 @@ Both use the password stored in `DEMO_USER_PASSWORD`.
 - `.docx`
 - `.pdf`
 
-## Collaboration Notes
-
-The collaboration indicators are implemented as lightweight presence heartbeats rather than full CRDT multiplayer editing. That means:
-
-- cursor/name/color indicators update live enough for awareness
-- comments and versions are persistent
-- document text editing itself is still based on autosave, not simultaneous merge-aware editing
-
-## Current Limitations
-
-- no full CRDT real-time co-editing yet
-- no inline comment anchors inside selected text yet
-- no suggestion/track-changes mode yet
-- version history is snapshot-based, not a semantic diff viewer
-- collaborator sharing UI currently grants editor access only
-- PDF and DOCX export focus on practical output, not pixel-perfect editor fidelity
-
-## Recommended Next Steps
-
-If you want to keep evolving the app, the highest-value follow-ups are:
-
-1. Add collaborator roles in the share UI for `viewer` and `editor`
-2. Add inline comment anchors tied to text selections
-3. Add diff previews for version restores
-4. Upgrade presence to true live multiplayer editing with Yjs/websocket sync
-5. Add suggestion mode on top of document versions and comments
