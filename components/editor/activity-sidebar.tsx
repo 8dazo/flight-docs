@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { History, MessageSquare, RotateCcw } from "lucide-react";
 
 import type {
@@ -18,11 +19,14 @@ export function ActivitySidebar({
   canEdit: boolean;
   documentId: string;
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("comments");
   const [comments, setComments] = useState<DocumentCommentRecord[]>([]);
   const [versions, setVersions] = useState<DocumentVersionRecord[]>([]);
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState("");
+  const [restoreError, setRestoreError] = useState("");
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -201,19 +205,31 @@ export function ActivitySidebar({
                   {canEdit ? (
                     <button
                       className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+                      disabled={isPending}
                       onClick={() => {
+                        setRestoreError("");
+                        setRestoringVersionId(version.id);
                         startTransition(async () => {
-                          await fetch(
+                          const response = await fetch(
                             `/api/documents/${documentId}/versions/${version.id}/restore`,
                             { method: "POST" },
                           );
-                          window.location.reload();
+
+                          if (!response.ok) {
+                            const payload = (await response.json()) as { error?: string };
+                            setRestoreError(payload.error ?? "Unable to restore version.");
+                            setRestoringVersionId(null);
+                            return;
+                          }
+
+                          router.refresh();
+                          setRestoringVersionId(null);
                         });
                       }}
                       type="button"
                     >
                       <RotateCcw className="h-4 w-4" />
-                      Restore
+                      {restoringVersionId === version.id ? "Restoring..." : "Restore"}
                     </button>
                   ) : null}
                 </div>
@@ -223,6 +239,7 @@ export function ActivitySidebar({
                 No saved versions yet.
               </div>
             )}
+            {restoreError ? <p className="text-sm text-rose-600">{restoreError}</p> : null}
           </div>
         )}
       </div>

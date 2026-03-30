@@ -2,6 +2,7 @@
 
 import {
   type FormEvent,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -111,6 +112,7 @@ export function DocumentEditor({
   const [dialog, setDialog] = useState<EditorDialogState | null>(null);
   const [zoom, setZoom] = useState<ZoomLevel>(1);
   const [markdownEnabled, setMarkdownEnabled] = useState(true);
+  const pendingRenameTitleRef = useRef<string | null>(null);
   const isOwner = owner.id === currentUserId;
   const isReadOnly = !permissions.canEdit;
   const downloadItems = [
@@ -177,30 +179,60 @@ export function DocumentEditor({
     [document.contentJson, permissions.canEdit],
   );
 
-  const handleTitleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  useEffect(() => {
+    setTitle(document.title);
+    pendingRenameTitleRef.current = null;
+  }, [document.title]);
 
+  useEffect(() => {
+    setLastSavedAt(document.updatedAt);
+  }, [document.updatedAt]);
+
+  const commitTitleChange = (nextTitleRaw: string) => {
     if (!permissions.canRename) {
       return;
     }
 
+    const nextTitle = nextTitleRaw.trim();
+
+    if (!nextTitle) {
+      setRenameError("Please provide a valid title.");
+      setTitle(document.title);
+      return;
+    }
+
+    if (nextTitle === document.title || pendingRenameTitleRef.current === nextTitle) {
+      setRenameError("");
+      setTitle(nextTitle);
+      return;
+    }
+
     setRenameError("");
+    setTitle(nextTitle);
+    pendingRenameTitleRef.current = nextTitle;
 
     startRenameTransition(async () => {
       try {
-        await renameDocument({ documentId: document.id, title });
+        await renameDocument({ documentId: document.id, title: nextTitle });
         router.refresh();
       } catch (error) {
         setRenameError(
           error instanceof Error ? error.message : "Unable to rename document.",
         );
+      } finally {
+        pendingRenameTitleRef.current = null;
       }
     });
   };
 
+  const handleTitleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    commitTitleChange(title);
+  };
+
   return (
     <>
-      <LexicalComposer initialConfig={initialConfig}>
+      <LexicalComposer initialConfig={initialConfig} key={`${document.id}:${document.updatedAt}`}>
         <EditorRefPlugin editorRef={editorRef} />
         <main className="h-dvh overflow-hidden bg-[linear-gradient(180deg,#eef3fb_0%,#f8fbff_45%,#f2f6fb_100%)] p-2 text-slate-950">
           <div className="flex h-full flex-col overflow-hidden rounded-[1.5rem] border border-white/80 bg-white/92 shadow-[0_40px_120px_-56px_rgba(15,23,42,0.35)] backdrop-blur">
@@ -222,19 +254,8 @@ export function DocumentEditor({
                           )}
                           disabled={isRenamePending}
                           onBlur={() => {
-                            if (permissions.canRename && title !== document.title) {
-                              startRenameTransition(async () => {
-                                try {
-                                  await renameDocument({ documentId: document.id, title });
-                                  router.refresh();
-                                } catch (error) {
-                                  setRenameError(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "Unable to rename document.",
-                                  );
-                                }
-                              });
+                            if (permissions.canRename && title.trim() !== document.title) {
+                              commitTitleChange(title);
                             }
                           }}
                           onChange={(event) => setTitle(event.target.value)}

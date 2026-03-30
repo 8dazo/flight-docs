@@ -77,6 +77,37 @@ export type AccessibleDocument = {
   canRename: boolean;
 };
 
+function normalizeDocumentTitle(title: string) {
+  return title.trim() || "Untitled Document";
+}
+
+async function trimDocumentVersions(documentId: string) {
+  const obsoleteVersions = await db.documentVersion.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+    },
+    skip: 25,
+    where: {
+      documentId,
+    },
+  });
+
+  if (!obsoleteVersions.length) {
+    return;
+  }
+
+  await db.documentVersion.deleteMany({
+    where: {
+      id: {
+        in: obsoleteVersions.map((version) => version.id),
+      },
+    },
+  });
+}
+
 function normalizeDashboardDocument(document: {
   id: string;
   isPublic: boolean;
@@ -170,6 +201,7 @@ export async function createDocumentForUser(
   title = "Untitled Document",
   contentJson: Prisma.InputJsonValue = createEmptyDocumentState(),
 ) {
+  const normalizedTitle = normalizeDocumentTitle(title);
   const document = await db.document.create({
     data: {
       contentJson,
@@ -177,11 +209,11 @@ export async function createDocumentForUser(
         create: {
           contentJson,
           createdBy: userId,
-          title,
+          title: normalizedTitle,
         },
       },
       ownerId: userId,
-      title,
+      title: normalizedTitle,
     },
     select: {
       id: true,
@@ -279,9 +311,10 @@ export async function renameOwnedDocument(
   documentId: string,
   title: string,
 ) {
+  const normalizedTitle = normalizeDocumentTitle(title);
   const updated = await db.document.updateMany({
     data: {
-      title: title.trim() || "Untitled Document",
+      title: normalizedTitle,
     },
     where: {
       id: documentId,
@@ -321,37 +354,19 @@ export async function saveDocumentContentForUser(
         create: {
           contentJson,
           createdBy: userId,
-          title: accessibleDocument.title ?? "Untitled Document",
+          title: normalizeDocumentTitle(accessibleDocument.title),
         },
       },
     },
     select: {
       updatedAt: true,
-      versions: {
-        orderBy: {
-          createdAt: "desc",
-        },
-        select: {
-          id: true,
-        },
-        take: 30,
-      },
     },
     where: {
       id: documentId,
     },
   });
 
-  const obsoleteVersions = updated.versions.slice(25);
-  if (obsoleteVersions.length) {
-    await db.documentVersion.deleteMany({
-      where: {
-        id: {
-          in: obsoleteVersions.map((version) => version.id),
-        },
-      },
-    });
-  }
+  await trimDocumentVersions(documentId);
 
   return updated.updatedAt.toISOString();
 }
@@ -530,7 +545,46 @@ export async function restoreDocumentVersion(userId: string, documentId: string,
     throw new Error("Version not found.");
   }
 
-  await saveDocumentContentForUser(userId, documentId, version.contentJson as Prisma.InputJsonValue);
+  const currentTitle = normalizeDocumentTitle(accessible.document.title);
+  const versionTitle = normalizeDocumentTitle(version.title);
+
+  const restoreChangesDocument =
+    JSON.stringify(accessible.document.contentJson) !== JSON.stringify(version.contentJson)
+    || currentTitle !== versionTitle;
+
+  if (!restoreChangesDocument) {
+    return;
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.documentVersion.create({
+      data: {
+        contentJson: accessible.document.contentJson as Prisma.InputJsonValue,
+        createdBy: userId,
+        documentId,
+        title: currentTitle,
+      },
+    });
+
+    await tx.document.update({
+      data: {
+        contentJson: version.contentJson as Prisma.InputJsonValue,
+        title: versionTitle,
+        versions: {
+          create: {
+            contentJson: version.contentJson as Prisma.InputJsonValue,
+            createdBy: userId,
+            title: versionTitle,
+          },
+        },
+      },
+      where: {
+        id: documentId,
+      },
+    });
+  });
+
+  await trimDocumentVersions(documentId);
 }
 
 export async function upsertDocumentPresence(input: {
