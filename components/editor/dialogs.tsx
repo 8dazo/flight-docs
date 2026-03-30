@@ -1,10 +1,11 @@
 "use client";
 
-import { type Dispatch, type SetStateAction, useActionState, useState } from "react";
+import { type Dispatch, type SetStateAction, useActionState, useEffect, useState } from "react";
 import { LexicalEditor, $createParagraphNode, $insertNodes } from "lexical";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { useRouter } from "next/navigation";
 
-import { shareDocument } from "@/app/actions/documents";
+import { shareDocument, toggleDocumentPublicAccess } from "@/app/actions/documents";
 import { $createEmbedNode, type EmbedPayload } from "@/components/editor/nodes/embed-node";
 import { $createImageNode, type ImagePayload } from "@/components/editor/nodes/image-node";
 import { insertLink, isValidUrl, normalizeUrl } from "@/components/editor/config";
@@ -298,15 +299,30 @@ function TableDialog({
 export function ShareDialog({
   collaborators,
   documentId,
+  isPublic,
   open,
   setOpen,
 }: {
   collaborators: DocumentCollaborator[];
   documentId: string;
+  isPublic: boolean;
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
 }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(shareDocument, initialShareState);
+  const [publicState, publicAction, publicPending] = useActionState(
+    toggleDocumentPublicAccess,
+    initialShareState,
+  );
+  const publicUrl =
+    typeof window === "undefined" ? "" : window.location.href;
+
+  useEffect(() => {
+    if (state.success || publicState.success) {
+      router.refresh();
+    }
+  }, [publicState.success, router, state.success]);
 
   if (!open) {
     return null;
@@ -314,6 +330,53 @@ export function ShareDialog({
 
   return (
     <Modal onClose={() => setOpen(false)} title="Share document">
+      <div className="mb-6 rounded-[1.6rem] border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Public link</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Anyone with the link can view this document when public access is enabled.
+            </p>
+          </div>
+          <span
+            className={
+              isPublic
+                ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-900"
+                : "rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"
+            }
+          >
+            {isPublic ? "Public" : "Private"}
+          </span>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <form action={publicAction}>
+            <input name="documentId" type="hidden" value={documentId} />
+            <input name="isPublic" type="hidden" value={String(!isPublic)} />
+            <button className="editor-primary-button" disabled={publicPending} type="submit">
+              {publicPending
+                ? "Updating..."
+                : isPublic
+                  ? "Disable public link"
+                  : "Enable public link"}
+            </button>
+          </form>
+          {isPublic ? (
+            <button
+              className="inline-flex h-12 items-center justify-center rounded-full border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+              onClick={() => navigator.clipboard.writeText(publicUrl)}
+              type="button"
+            >
+              Copy public link
+            </button>
+          ) : null}
+        </div>
+        {publicState.error ? (
+          <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {publicState.error}
+          </p>
+        ) : null}
+      </div>
+
       <form action={action} className="space-y-4">
         <input name="documentId" type="hidden" value={documentId} />
         <label className="block space-y-2">

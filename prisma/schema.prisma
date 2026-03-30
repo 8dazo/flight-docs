@@ -35,6 +35,7 @@ model Document {
   id            String                 @id @default(cuid())
   title         String                 @default("Untitled Document")
   contentJson   Json
+  isPublic      Boolean                @default(false)
   ownerId       String
   owner         User                   @relation("OwnedDocuments", fields: [ownerId], references: [id], onDelete: Cascade)
   collaborators DocumentCollaborator[]

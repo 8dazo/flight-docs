@@ -49,23 +49,30 @@ import {
 } from "@/components/editor/plugins";
 import { URL_MATCHER, editorTheme, isValidUrl } from "@/components/editor/config";
 import { EditorChrome } from "@/components/editor/toolbar";
+import {
+  downloadDocxFile,
+  downloadMarkdownFile,
+  downloadPdfFile,
+  downloadTextFile,
+} from "@/components/editor/export";
 import type {
   EditorDialogState,
   OutlineItem,
   SaveState,
   ZoomLevel,
 } from "@/components/editor/types";
-import { SaveIndicator } from "@/components/editor/ui";
+import { MenuDropdown, SaveIndicator } from "@/components/editor/ui";
 import type { DocumentCollaborator } from "@/lib/documents";
 import { cn } from "@/lib/utils";
 
 type Props = {
   collaborators: DocumentCollaborator[];
-  currentUserId: string;
+  currentUserId: string | null;
   document: {
     id: string;
     title: string;
     contentJson: Prisma.JsonValue;
+    isPublic: boolean;
     updatedAt: string;
   };
   owner: {
@@ -74,6 +81,7 @@ type Props = {
     name: string;
   };
   permissions: {
+    canEdit: boolean;
     canRename: boolean;
     canShare: boolean;
   };
@@ -99,10 +107,45 @@ export function DocumentEditor({
   const [zoom, setZoom] = useState<ZoomLevel>(1);
   const [markdownEnabled, setMarkdownEnabled] = useState(true);
   const isOwner = owner.id === currentUserId;
+  const isReadOnly = !permissions.canEdit;
+  const downloadItems = [
+    {
+      label: "Download .md",
+      onSelect: () => {
+        if (editorRef.current) {
+          downloadMarkdownFile(editorRef.current, title);
+        }
+      },
+    },
+    {
+      label: "Download .txt",
+      onSelect: () => {
+        if (editorRef.current) {
+          downloadTextFile(editorRef.current, title);
+        }
+      },
+    },
+    {
+      label: "Download .docx",
+      onSelect: () => {
+        if (editorRef.current) {
+          void downloadDocxFile(editorRef.current, title);
+        }
+      },
+    },
+    {
+      label: "Download .pdf",
+      onSelect: () => {
+        if (editorRef.current) {
+          void downloadPdfFile(editorRef.current, title);
+        }
+      },
+    },
+  ];
 
   const initialConfig = useMemo(
     () => ({
-      editable: true,
+      editable: permissions.canEdit,
       editorState: JSON.stringify(document.contentJson),
       namespace: "flight-docs-editor",
       nodes: [
@@ -126,7 +169,7 @@ export function DocumentEditor({
       },
       theme: editorTheme,
     }),
-    [document.contentJson],
+    [document.contentJson, permissions.canEdit],
   );
 
   const handleTitleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -203,13 +246,20 @@ export function DocumentEditor({
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                      {!isOwner ? <span>Shared editor access</span> : null}
+                      {isReadOnly && document.isPublic ? <span>Public view access</span> : null}
+                      {!isReadOnly && !isOwner ? <span>Shared editor access</span> : null}
                     </div>
                     {renameError ? <p className="text-sm text-rose-600">{renameError}</p> : null}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <MenuDropdown
+                    buttonClassName="inline-flex h-11 items-center justify-center rounded-full border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                    items={downloadItems}
+                    label="Download"
+                    menuAlign="right"
+                  />
                   {permissions.canShare ? (
                     <button
                       className="inline-flex h-11 items-center justify-center rounded-full bg-[#4f46e5] px-5 text-sm font-semibold text-white transition hover:bg-[#4338ca]"
@@ -222,13 +272,24 @@ export function DocumentEditor({
                 </div>
               </div>
 
-              <EditorChrome
-                markdownEnabled={markdownEnabled}
-                onMarkdownToggle={() => setMarkdownEnabled((value) => !value)}
-                onOpenDialog={setDialog}
-                setZoom={setZoom}
-                zoom={zoom}
-              />
+              {permissions.canEdit ? (
+                <EditorChrome
+                  markdownEnabled={markdownEnabled}
+                  onMarkdownToggle={() => setMarkdownEnabled((value) => !value)}
+                  onOpenDialog={setDialog}
+                  setZoom={setZoom}
+                  zoom={zoom}
+                />
+              ) : (
+                <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-sm text-slate-500">
+                  <span>
+                    {document.isPublic
+                      ? "Anyone with this link can view this document."
+                      : "View-only access"}
+                  </span>
+                  <span>{Math.round(zoom * 100)}%</span>
+                </div>
+              )}
             </header>
 
             <section className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -236,7 +297,7 @@ export function DocumentEditor({
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                   <Link
                     className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-950"
-                    href="/dashboard"
+                    href={currentUserId ? "/dashboard" : "/"}
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </Link>
@@ -274,25 +335,34 @@ export function DocumentEditor({
         <TablePlugin hasHorizontalScroll />
         <HorizontalRulePlugin />
         <CodeHighlightPlugin />
-        <FloatingTextToolbarPlugin />
-        {markdownEnabled ? <MarkdownShortcutPlugin transformers={DEFAULT_TRANSFORMERS} /> : null}
+        {permissions.canEdit ? <FloatingTextToolbarPlugin /> : null}
+        {permissions.canEdit && markdownEnabled ? (
+          <MarkdownShortcutPlugin transformers={DEFAULT_TRANSFORMERS} />
+        ) : null}
         <OutlinePlugin onChange={setOutline} />
-        <SlashCommandPlugin onOpenDialog={setDialog} />
-        <EditorAutosavePlugin
-          documentId={document.id}
-          initialSerializedState={JSON.stringify(document.contentJson)}
-          setLastSavedAt={setLastSavedAt}
-          setSaveState={setSaveState}
-        />
-        <InsertDialogs dialog={dialog} onClose={() => setDialog(null)} />
+        {permissions.canEdit ? <SlashCommandPlugin onOpenDialog={setDialog} /> : null}
+        {permissions.canEdit ? (
+          <EditorAutosavePlugin
+            documentId={document.id}
+            initialSerializedState={JSON.stringify(document.contentJson)}
+            setLastSavedAt={setLastSavedAt}
+            setSaveState={setSaveState}
+          />
+        ) : null}
+        {permissions.canEdit ? (
+          <InsertDialogs dialog={dialog} onClose={() => setDialog(null)} />
+        ) : null}
       </LexicalComposer>
 
-      <ShareDialog
-        collaborators={collaborators}
-        documentId={document.id}
-        open={shareOpen}
-        setOpen={setShareOpen}
-      />
+      {permissions.canShare ? (
+        <ShareDialog
+          collaborators={collaborators}
+          documentId={document.id}
+          isPublic={document.isPublic}
+          open={shareOpen}
+          setOpen={setShareOpen}
+        />
+      ) : null}
     </>
   );
 }

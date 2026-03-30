@@ -5,7 +5,10 @@ import { db } from "@/lib/db";
 import { createEmptyDocumentState } from "@/lib/editor";
 
 export type DashboardDocument = {
+  access: "edit" | "owner" | "view";
   id: string;
+  isPublic: boolean;
+  kind: "owned" | "shared";
   title: string;
   updatedAt: string;
   owner: {
@@ -17,7 +20,7 @@ export type DashboardDocument = {
 
 export type DocumentCollaborator = {
   id: string;
-  role: "editor";
+  role: "editor" | "viewer";
   user: {
     id: string;
     email: string;
@@ -26,8 +29,10 @@ export type DocumentCollaborator = {
 };
 
 export type AccessibleDocument = {
+  canEdit: boolean;
   document: {
     id: string;
+    isPublic: boolean;
     title: string;
     contentJson: Prisma.JsonValue;
     ownerId: string;
@@ -46,6 +51,7 @@ export type AccessibleDocument = {
 
 function normalizeDashboardDocument(document: {
   id: string;
+  isPublic: boolean;
   title: string;
   updatedAt: Date;
   owner: {
@@ -53,9 +59,12 @@ function normalizeDashboardDocument(document: {
     email: string;
     name: string;
   };
-}): DashboardDocument {
+}, meta: { access: "edit" | "owner" | "view"; kind: "owned" | "shared" }): DashboardDocument {
   return {
+    access: meta.access,
     id: document.id,
+    isPublic: document.isPublic,
+    kind: meta.kind,
     owner: document.owner,
     title: document.title,
     updatedAt: document.updatedAt.toISOString(),
@@ -65,7 +74,9 @@ function normalizeDashboardDocument(document: {
 export async function getDashboardData(userId: string) {
   const [ownedDocuments, sharedCollaborations] = await Promise.all([
     db.document.findMany({
-      include: {
+      select: {
+        id: true,
+        isPublic: true,
         owner: {
           select: {
             email: true,
@@ -73,6 +84,8 @@ export async function getDashboardData(userId: string) {
             name: true,
           },
         },
+        title: true,
+        updatedAt: true,
       },
       orderBy: {
         updatedAt: "desc",
@@ -82,9 +95,12 @@ export async function getDashboardData(userId: string) {
       },
     }),
     db.documentCollaborator.findMany({
-      include: {
+      select: {
+        role: true,
         document: {
-          include: {
+          select: {
+            id: true,
+            isPublic: true,
             owner: {
               select: {
                 email: true,
@@ -92,6 +108,8 @@ export async function getDashboardData(userId: string) {
                 name: true,
               },
             },
+            title: true,
+            updatedAt: true,
           },
         },
       },
@@ -107,9 +125,14 @@ export async function getDashboardData(userId: string) {
   ]);
 
   return {
-    owned: ownedDocuments.map(normalizeDashboardDocument),
+    owned: ownedDocuments.map((document) =>
+      normalizeDashboardDocument(document, { access: "owner", kind: "owned" }),
+    ),
     shared: sharedCollaborations.map((collaboration) =>
-      normalizeDashboardDocument(collaboration.document),
+      normalizeDashboardDocument(collaboration.document, {
+        access: collaboration.role === "viewer" ? "view" : "edit",
+        kind: "shared",
+      }),
     ),
   };
 }
@@ -133,7 +156,7 @@ export async function createDocumentForUser(
   return document.id;
 }
 
-export async function getAccessibleDocument(documentId: string, userId: string) {
+export async function getAccessibleDocument(documentId: string, userId?: string | null) {
   const document = await db.document.findUnique({
     include: {
       collaborators: {
@@ -168,29 +191,52 @@ export async function getAccessibleDocument(documentId: string, userId: string) 
   const isCollaborator = document.collaborators.some(
     (collaborator) => collaborator.userId === userId,
   );
+  const canViewPublicly = document.isPublic;
 
-  if (!isOwner && !isCollaborator) {
+  if (!isOwner && !isCollaborator && !canViewPublicly) {
     notFound();
   }
 
   return {
+    canEdit: isOwner || isCollaborator,
     canRename: isOwner,
     canShare: isOwner,
     collaborators: document.collaborators.map((collaborator) => ({
       id: collaborator.id,
-      role: "editor",
+      role: collaborator.role === "viewer" ? "viewer" : "editor",
       user: collaborator.user,
     })),
     document: {
       contentJson: document.contentJson,
       createdAt: document.createdAt.toISOString(),
       id: document.id,
+      isPublic: document.isPublic,
       ownerId: document.ownerId,
       title: document.title,
       updatedAt: document.updatedAt.toISOString(),
     },
     owner: document.owner,
   } satisfies AccessibleDocument;
+}
+
+export async function setDocumentPublicAccess(
+  userId: string,
+  documentId: string,
+  isPublic: boolean,
+) {
+  const updated = await db.document.updateMany({
+    data: {
+      isPublic,
+    },
+    where: {
+      id: documentId,
+      ownerId: userId,
+    },
+  });
+
+  if (updated.count === 0) {
+    throw new Error("Only the owner can update public access.");
+  }
 }
 
 export async function renameOwnedDocument(

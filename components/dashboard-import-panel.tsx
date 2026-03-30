@@ -23,12 +23,12 @@ export function DashboardImportPanel() {
       <div className="mb-3">
         <p className="text-sm font-semibold text-slate-950">Import file</p>
         <p className="text-sm text-slate-500">
-          Upload a `.txt` or `.md` file to create a new editable document.
+          Upload a `.txt`, `.md`, or `.docx` file to create a new editable document.
         </p>
       </div>
       <form action={action} className="flex flex-col gap-3 sm:flex-row" ref={formRef}>
         <input
-          accept=".txt,.md,text/plain,text/markdown"
+          accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="block h-12 flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 file:mr-4 file:rounded-full file:border-0 file:bg-slate-950 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
           name="file"
           required

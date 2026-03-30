@@ -1,5 +1,5 @@
 import { getAccessibleDocument } from "@/lib/documents";
-import { requireUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { DocumentEditor } from "@/components/document-editor";
 
 type Props = {
@@ -7,17 +7,18 @@ type Props = {
 };
 
 export default async function DocumentPage({ params }: Props) {
-  const user = await requireUser();
+  const user = await getCurrentUser();
   const { id } = await params;
-  const accessibleDocument = await getAccessibleDocument(id, user.id);
+  const accessibleDocument = await getAccessibleDocument(id, user?.id);
 
   return (
     <DocumentEditor
       collaborators={accessibleDocument.collaborators}
-      currentUserId={user.id}
+      currentUserId={user?.id ?? null}
       document={accessibleDocument.document}
       owner={accessibleDocument.owner}
       permissions={{
+        canEdit: accessibleDocument.canEdit,
         canRename: accessibleDocument.canRename,
         canShare: accessibleDocument.canShare,
       }}
